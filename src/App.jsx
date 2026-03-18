@@ -53,118 +53,142 @@ export default function App() {
     return () => clearInterval(timer);
   }, [screen, showAnswer]);
 
+  const pageStyle = {
+    minHeight: "100vh",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "linear-gradient(135deg,#2563eb,#3b82f6,#4338ca)",
+    color: "white",
+    fontFamily: "Arial",
+  };
+
+  const card = {
+    background: "rgba(255,255,255,0.1)",
+    padding: "30px",
+    borderRadius: "20px",
+    backdropFilter: "blur(10px)",
+    textAlign: "center",
+    width: "90%",
+    maxWidth: "600px",
+  };
+
   if (screen === "result") {
     return (
-      <div style={{ textAlign: "center", marginTop: 100 }}>
-        <h1>🏆 Oyun Bitti</h1>
-        <h2>{avatar} {name}</h2>
-        <h2>Skor: {score}</h2>
-        <button onClick={() => setScreen("menu")}>Menü</button>
+      <div style={pageStyle}>
+        <div style={card}>
+          <h1>🏆 Oyun Bitti</h1>
+          <h2>{avatar} {name}</h2>
+          <h2>Skor: {score}</h2>
+          <button onClick={() => setScreen("menu")}>Ana Menü</button>
+        </div>
       </div>
     );
   }
 
   if (screen === "game") {
     return (
-      <div style={{ textAlign: "center", marginTop: 60 }}>
-        <h2>{avatar} {name}</h2>
-        <h3>{exam} - {lesson}</h3>
+      <div style={pageStyle}>
+        <div style={card}>
+          <h2>{avatar} {name}</h2>
+          <p>{exam} - {lesson}</p>
 
-        <p>⏱ {time}</p>
+          <p>⏱ {time}</p>
 
-        <h2>{current.question}</h2>
+          <h2>{current.question}</h2>
 
-        {current.options.map((opt, i) => (
-          <button
-            key={i}
-            onClick={() => {
-              if (showAnswer) return;
+          {current.options.map((opt, i) => (
+            <button
+              key={i}
+              onClick={() => {
+                if (showAnswer) return;
 
-              setSelected(i);
-              setShowAnswer(true);
+                setSelected(i);
+                setShowAnswer(true);
 
-              if (i === current.answer) {
-                setScore((s) => s + 10);
-              }
-            }}
-            style={{
-              display: "block",
-              margin: "10px auto",
-              padding: "12px",
-              width: "200px",
-              background:
-                showAnswer && i === current.answer
-                  ? "green"
-                  : showAnswer && i === selected
-                  ? "red"
-                  : "gray",
-              color: "white",
-              border: "none",
-              borderRadius: "8px",
-            }}
-          >
-            {opt}
-          </button>
-        ))}
+                if (i === current.answer) setScore(score + 10);
+              }}
+              style={{
+                display: "block",
+                margin: "10px auto",
+                padding: "12px",
+                width: "80%",
+                borderRadius: "10px",
+                border: "none",
+                color: "white",
+                background:
+                  showAnswer && i === current.answer
+                    ? "green"
+                    : showAnswer && i === selected
+                    ? "red"
+                    : "rgba(255,255,255,0.2)",
+              }}
+            >
+              {opt}
+            </button>
+          ))}
 
-        {showAnswer && (
-          <button
-            onClick={() => {
-              if (qIndex < 9) {
-                setQIndex(qIndex + 1);
-                setTime(20);
-                setSelected(null);
-                setShowAnswer(false);
-              } else {
-                setScreen("result");
-              }
-            }}
-          >
-            Sonraki
-          </button>
-        )}
+          {showAnswer && (
+            <button
+              onClick={() => {
+                if (qIndex < 9) {
+                  setQIndex(qIndex + 1);
+                  setTime(20);
+                  setSelected(null);
+                  setShowAnswer(false);
+                } else {
+                  setScreen("result");
+                }
+              }}
+            >
+              Sonraki
+            </button>
+          )}
+        </div>
       </div>
     );
   }
 
   return (
-    <div style={{ textAlign: "center", marginTop: 60 }}>
-      <h1>🎮 YKS TURNUVA</h1>
+    <div style={pageStyle}>
+      <div style={card}>
+        <h1>YKS Turnuva</h1>
 
-      <input
-        placeholder="İsim"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-      />
+        <input
+          placeholder="İsim yaz"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
 
-      <h3>Avatar</h3>
-      {avatars.map((a) => (
-        <button key={a.label} onClick={() => setAvatar(a.emoji)}>
-          {a.emoji}
+        <h3>Profil Karakteri</h3>
+        {avatars.map((a) => (
+          <button key={a.label} onClick={() => setAvatar(a.emoji)}>
+            {a.emoji}
+          </button>
+        ))}
+
+        <h3>Sınav Türü</h3>
+        <button onClick={() => setExam("TYT")}>TYT</button>
+        <button onClick={() => setExam("AYT")}>AYT</button>
+
+        <h3>Ders</h3>
+        <button onClick={() => setLesson("Matematik")}>Matematik</button>
+        <button onClick={() => setLesson("Türkçe")}>Türkçe</button>
+
+        <br /><br />
+
+        <button
+          onClick={() => {
+            if (!name || !exam || !lesson) {
+              alert("Hepsini seç!");
+              return;
+            }
+            setScreen("game");
+          }}
+        >
+          Oyuna Başla
         </button>
-      ))}
-
-      <h3>Sınav</h3>
-      <button onClick={() => setExam("TYT")}>TYT</button>
-      <button onClick={() => setExam("AYT")}>AYT</button>
-
-      <h3>Ders</h3>
-      <button onClick={() => setLesson("Matematik")}>Matematik</button>
-      <button onClick={() => setLesson("Türkçe")}>Türkçe</button>
-
-      <br /><br />
-
-      <button
-        onClick={() => {
-          if (!name || !exam || !lesson) {
-            alert("Hepsini seç!");
-            return;
-          }
-          setScreen("game");
-        }}
-      >
-        Başla
-      </button>
+      </div>
     </div>
   );
 }
