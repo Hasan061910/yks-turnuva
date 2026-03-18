@@ -261,12 +261,16 @@ export default function App() {
   };
 
   const createRoom = async () => {
-    if (!db) {
-      alert("Firebase bağlantısı yok. Realtime Database açık mı kontrol et.");
+    if (!name || !exam || !lesson) {
+      const msg = "Önce isim, sınav türü ve ders seçmelisin.";
+      setRoomError(msg);
+      alert(msg);
       return;
     }
-    if (!name || !exam || !lesson) {
-      alert("İsim, sınav türü ve ders seçmelisin.");
+    if (!db) {
+      const msg = "Firebase bağlantısı yok. Realtime Database açık mı kontrol et.";
+      setRoomError(msg);
+      alert(msg);
       return;
     }
     try {
@@ -292,12 +296,13 @@ export default function App() {
       await set(ref(db, `rooms/${code}`), room);
       setRoomCode(code);
       setJoinCode(code);
-      setRoomError("");
+      setRoomError(`Oda kuruldu: ${code}`);
       setScreen("onlineLobby");
     } catch (error) {
       console.error(error);
-      setRoomError("Oda kurulamadı.");
-      alert("Oda kurulamadı.");
+      const msg = `Oda kurulamadı: ${error?.message || "bilinmeyen hata"}`;
+      setRoomError(msg);
+      alert(msg);
     }
   };
 
