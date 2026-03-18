@@ -1,22 +1,4 @@
 import React, { useState } from "react";
-const [time, setTime] = useState(20);
-const [selected, setSelected] = useState(null);
-const [showAnswer, setShowAnswer] = useState(false);
-useEffect(() => {
-  if (screen !== "game" || showAnswer) return;
-
-  const timer = setInterval(() => {
-    setTime((t) => {
-      if (t <= 1) {
-        setShowAnswer(true);
-        return 0;
-      }
-      return t - 1;
-    });
-  }, 1000);
-
-  return () => clearInterval(timer);
-}, [screen, showAnswer]);
 
 const avatars = [
   { emoji: "🧑‍🚀", label: "Yıldız Kaşif" },
