@@ -2,14 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getDatabase, ref, set, get, onValue, update, off, remove } from "firebase/database";
 
-type Avatar = { name: string; emoji: string };
-type Exam = "" | "TYT" | "AYT";
-type Lesson = "" | "Türkçe" | "Matematik" | "Fen" | "Sosyal" | "Fizik" | "Kimya" | "Biyoloji" | "Edebiyat";
-type Screen = "menu" | "game" | "onlineLobby" | "result";
-type GameType = "" | "online" | "offline";
-type Question = { question: string; options: string[]; answer: number };
-type OnlinePlayer = { id: string; name: string; avatar: string; score: number; answered: boolean; selected: number | null };
-type FirebaseRoom = {
   code: string;
   hostId: string;
   status: "lobby" | "playing" | "finished";
