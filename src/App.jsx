@@ -254,30 +254,36 @@ export default function App() {
 
   const createRoom = async () => {
     if (!db) {
-      alert("Firebase bağlantısı yok.");
+      alert("Firebase bağlantısı yok ya da veritabanı açılmamış.");
       return;
     }
     if (!name || !exam || !lesson) {
       alert("İsim, sınav türü ve ders seçmelisin.");
       return;
     }
-    const code = roomCodeGen();
-    const room = {
-      code,
-      hostId: playerId,
-      exam,
-      lesson,
-      status: "lobby",
-      questionIndex: 0,
-      players: {
-        [playerId]: { id: playerId, name, avatar, score: 0, answered: false, selected: null },
-      },
-    };
-    await set(ref(db, `rooms/${code}`), room);
-    setRoomCode(code);
-    setJoinCode(code);
-    setRoomError("");
-    setScreen("onlineLobby");
+    try {
+      const code = roomCodeGen();
+      const room = {
+        code,
+        hostId: playerId,
+        exam,
+        lesson,
+        status: "lobby",
+        questionIndex: 0,
+        players: {
+          [playerId]: { id: playerId, name, avatar, score: 0, answered: false, selected: null },
+        },
+      };
+      await set(ref(db, `rooms/${code}`), room);
+      setRoomCode(code);
+      setJoinCode(code);
+      setRoomError("");
+      setScreen("onlineLobby");
+    } catch (error) {
+      console.error(error);
+      setRoomError("Oda kurulamadı. Firebase Rules veya Database bağlantısını kontrol et.");
+      alert("Oda kurulamadı. Firebase Rules veya Database bağlantısını kontrol et.");
+    }
   };
 
   const joinRoom = async () => {
@@ -587,8 +593,12 @@ export default function App() {
 
         <button
           onClick={() => {
+            if (!name || !exam || !lesson) {
+              alert("İsim, sınav türü ve ders seçmelisin.");
+              return;
+            }
             if (gameType === "online") {
-              setScreen("onlineLobby");
+              createRoom();
               return;
             }
             startOffline();
