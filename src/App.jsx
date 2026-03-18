@@ -12,13 +12,7 @@ const firebaseConfig = {
   appId: "1:602435856699:web:c974154eeb4a2bf711af1e",
 };
 
-const firebaseReady = Boolean(
-  firebaseConfig.apiKey &&
-    firebaseConfig.databaseURL &&
-    firebaseConfig.projectId &&
-    !firebaseConfig.apiKey.startsWith("BURAYA_")
-);
-
+const firebaseReady = Boolean(firebaseConfig.apiKey && firebaseConfig.databaseURL && firebaseConfig.projectId);
 const app = firebaseReady ? (getApps().length ? getApp() : initializeApp(firebaseConfig)) : null;
 const db = app ? getDatabase(app) : null;
 
@@ -130,30 +124,6 @@ const questionBank = {
   ],
 };
 
-const styles = {
-  page: {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 16,
-    background: "linear-gradient(135deg,#2563eb,#3b82f6,#4338ca)",
-    color: "white",
-    fontFamily: "Arial, sans-serif",
-  },
-  card: {
-    width: "100%",
-    maxWidth: 720,
-    background: "rgba(255,255,255,0.10)",
-    border: "1px solid rgba(255,255,255,0.20)",
-    borderRadius: 28,
-    padding: 28,
-    textAlign: "center",
-    boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
-    backdropFilter: "blur(12px)",
-  },
-};
-
 function shuffle(items) {
   const copy = [...items];
   for (let i = copy.length - 1; i > 0; i -= 1) {
@@ -163,7 +133,7 @@ function shuffle(items) {
   return copy;
 }
 
-function roomCodeGen() {
+function makeRoomCode() {
   return Math.random().toString(36).slice(2, 6).toUpperCase();
 }
 
@@ -173,62 +143,61 @@ export default function App() {
 
   const [screen, setScreen] = useState("menu");
   const [name, setName] = useState("");
-  const [avatar, setAvatar] = useState("🧑‍🚀");
+  const [avatar, setAvatar] = useState(avatars[0].emoji);
   const [exam, setExam] = useState("");
   const [lesson, setLesson] = useState("");
   const [gameType, setGameType] = useState("offline");
+  const [joinCode, setJoinCode] = useState("");
+  const [roomCode, setRoomCode] = useState("");
+  const [roomData, setRoomData] = useState(null);
+  const [roomError, setRoomError] = useState("");
+  const [playerId] = useState(() => `player-${Math.random().toString(36).slice(2, 10)}`);
+  const [questions, setQuestions] = useState([]);
   const [qIndex, setQIndex] = useState(0);
   const [score, setScore] = useState(0);
   const [combo, setCombo] = useState(0);
   const [time, setTime] = useState(20);
   const [selected, setSelected] = useState(null);
   const [showAnswer, setShowAnswer] = useState(false);
-  const [questions, setQuestions] = useState([]);
-  const [joinCode, setJoinCode] = useState("");
-  const [roomCode, setRoomCode] = useState("");
-  const [roomData, setRoomData] = useState(null);
-  const [roomError, setRoomError] = useState("");
-  const [playerId] = useState(() => `player-${Math.random().toString(36).slice(2, 10)}`);
 
-  const current = questions[qIndex];
   const lessons = exam === "TYT" ? ["Türkçe", "Matematik", "Fen", "Sosyal"] : exam === "AYT" ? ["Matematik", "Fizik", "Kimya", "Biyoloji", "Edebiyat"] : [];
-  const ranking = roomData ? Object.values(roomData.players || {}).sort((a, b) => b.score - a.score) : [];
-  const myOnlineScore = roomData?.players?.[playerId]?.score || 0;
+  const current = questions[qIndex];
+  const players = roomData ? Object.values(roomData.players || {}) : [];
+  const ranking = [...players].sort((a, b) => b.score - a.score);
+  const me = roomData?.players?.[playerId];
   const isHost = roomData?.hostId === playerId;
+  const everyoneAnswered = players.length > 0 && players.every((p) => p.answered);
 
   useEffect(() => {
     if (screen !== "game" || showAnswer || !current) return;
-    const timer = setInterval(() => {
+    const id = setInterval(() => {
       setTime((t) => {
         if (t <= 1) {
           setShowAnswer(true);
-          setCombo(0);
           return 0;
         }
         return t - 1;
       });
     }, 1000);
-    return () => clearInterval(timer);
+    return () => clearInterval(id);
   }, [screen, showAnswer, current]);
 
   useEffect(() => {
     if (!db || !roomCode || gameType !== "online") return;
     const roomRef = ref(db, `rooms/${roomCode}`);
-    const unsub = onValue(roomRef, (snapshot) => {
+    const handler = onValue(roomRef, (snapshot) => {
       const value = snapshot.val();
       setRoomData(value);
       if (!value) return;
+      setExam(value.exam);
+      setLesson(value.lesson);
+      setQuestions((questionBank[value.lesson] || []).slice(0, 10));
+      setQIndex(value.questionIndex || 0);
       if (value.status === "lobby") setScreen("onlineLobby");
-      if (value.status === "playing") {
-        setScreen("game");
-        setExam(value.exam);
-        setLesson(value.lesson);
-        setQuestions((questionBank[value.lesson] || []).slice(0, 10));
-        setQIndex(value.questionIndex || 0);
-      }
+      if (value.status === "playing") setScreen("game");
       if (value.status === "finished") setScreen("result");
     });
-    return () => off(roomRef, "value", unsub);
+    return () => off(roomRef, "value", handler);
   }, [roomCode, gameType]);
 
   const playSound = (sound) => {
@@ -237,24 +206,25 @@ export default function App() {
     sound.play().catch(() => {});
   };
 
-  const startOffline = () => {
-    if (!name || !exam || !lesson) {
-      alert("İsim, sınav türü ve ders seçmelisin.");
-      return;
-    }
-    setQuestions(shuffle(questionBank[lesson] || []).slice(0, 10));
-    setQIndex(0);
-    setScore(0);
-    setCombo(0);
+  const resetQuestionState = () => {
     setTime(20);
     setSelected(null);
     setShowAnswer(false);
+  };
+
+  const startOffline = () => {
+    const chosen = shuffle(questionBank[lesson] || []).slice(0, 10);
+    setQuestions(chosen);
+    setQIndex(0);
+    setScore(0);
+    setCombo(0);
+    resetQuestionState();
     setScreen("game");
   };
 
   const createRoom = async () => {
     if (!db) {
-      alert("Firebase bağlantısı yok ya da veritabanı açılmamış.");
+      alert("Firebase bağlantısı yok. Realtime Database ve Rules kısmını kontrol et.");
       return;
     }
     if (!name || !exam || !lesson) {
@@ -262,16 +232,23 @@ export default function App() {
       return;
     }
     try {
-      const code = roomCodeGen();
+      const code = makeRoomCode();
       const room = {
         code,
         hostId: playerId,
+        status: "lobby",
         exam,
         lesson,
-        status: "lobby",
         questionIndex: 0,
         players: {
-          [playerId]: { id: playerId, name, avatar, score: 0, answered: false, selected: null },
+          [playerId]: {
+            id: playerId,
+            name,
+            avatar,
+            score: 0,
+            answered: false,
+            selected: null,
+          },
         },
       };
       await set(ref(db, `rooms/${code}`), room);
@@ -281,57 +258,68 @@ export default function App() {
       setScreen("onlineLobby");
     } catch (error) {
       console.error(error);
-      setRoomError("Oda kurulamadı. Firebase Rules veya Database bağlantısını kontrol et.");
-      alert("Oda kurulamadı. Firebase Rules veya Database bağlantısını kontrol et.");
+      setRoomError("Oda kurma başarısız. Firebase Rules kısmını aç.");
+      alert("Oda kurma başarısız. Firebase Rules kısmını aç.");
     }
   };
 
   const joinRoom = async () => {
     if (!db) {
-      alert("Firebase bağlantısı yok.");
+      alert("Firebase bağlantısı yok. Realtime Database ve Rules kısmını kontrol et.");
       return;
     }
     const code = joinCode.trim().toUpperCase();
-    if (!code || !name) {
+    if (!name || !code) {
       setRoomError("İsim yaz ve oda kodu gir.");
       return;
     }
-    const roomRef = ref(db, `rooms/${code}`);
-    const snap = await get(roomRef);
-    if (!snap.exists()) {
-      setRoomError("Oda bulunamadı.");
-      return;
+    try {
+      const roomRef = ref(db, `rooms/${code}`);
+      const snap = await get(roomRef);
+      if (!snap.exists()) {
+        setRoomError("Oda bulunamadı.");
+        return;
+      }
+      const value = snap.val();
+      if (Object.keys(value.players || {}).length >= 4) {
+        setRoomError("Oda dolu.");
+        return;
+      }
+      await update(roomRef, {
+        [`players/${playerId}`]: {
+          id: playerId,
+          name,
+          avatar,
+          score: 0,
+          answered: false,
+          selected: null,
+        },
+      });
+      setRoomCode(code);
+      setRoomError("");
+      setScreen("onlineLobby");
+    } catch (error) {
+      console.error(error);
+      setRoomError("Odaya girilemedi. Firebase Rules kısmını aç.");
+      alert("Odaya girilemedi. Firebase Rules kısmını aç.");
     }
-    const value = snap.val();
-    if (Object.keys(value.players || {}).length >= 4) {
-      setRoomError("Oda dolu.");
-      return;
-    }
-    await update(roomRef, {
-      [`players/${playerId}`]: { id: playerId, name, avatar, score: 0, answered: false, selected: null },
-    });
-    setRoomCode(code);
-    setRoomError("");
-    setScreen("onlineLobby");
   };
 
   const startOnlineGame = async () => {
     if (!db || !roomCode || !isHost) return;
-    await update(ref(db, `rooms/${roomCode}`), { status: "playing", questionIndex: 0 });
-    setQIndex(0);
-    setQuestions((questionBank[lesson] || []).slice(0, 10));
-    setTime(20);
-    setSelected(null);
-    setShowAnswer(false);
+    await update(ref(db, `rooms/${roomCode}`), {
+      status: "playing",
+      questionIndex: 0,
+    });
+    resetQuestionState();
   };
 
-  const answer = async (i) => {
+  const answerQuestion = async (i) => {
     if (showAnswer || !current) return;
     setSelected(i);
     setShowAnswer(true);
-    const isCorrect = i === current.answer;
-
-    if (isCorrect) {
+    const ok = i === current.answer;
+    if (ok) {
       setScore((s) => s + 10);
       setCombo((c) => c + 1);
       playSound(correctSound);
@@ -343,15 +331,16 @@ export default function App() {
     if (gameType === "online" && db && roomCode) {
       const currentScore = roomData?.players?.[playerId]?.score || 0;
       await update(ref(db, `rooms/${roomCode}/players/${playerId}`), {
-        selected: i,
         answered: true,
-        score: isCorrect ? currentScore + 10 : currentScore,
+        selected: i,
+        score: ok ? currentScore + 10 : currentScore,
       });
     }
   };
 
-  const next = async () => {
-    if (gameType === "online" && db && roomCode && isHost) {
+  const nextQuestion = async () => {
+    if (gameType === "online") {
+      if (!db || !roomCode || !isHost) return;
       if (qIndex < questions.length - 1) {
         const payload = { questionIndex: qIndex + 1 };
         Object.keys(roomData.players || {}).forEach((id) => {
@@ -359,21 +348,16 @@ export default function App() {
           payload[`players/${id}/selected`] = null;
         });
         await update(ref(db, `rooms/${roomCode}`), payload);
-        setQIndex((q) => q + 1);
-        setTime(20);
-        setSelected(null);
-        setShowAnswer(false);
-        return;
+        resetQuestionState();
+      } else {
+        await update(ref(db, `rooms/${roomCode}`), { status: "finished" });
       }
-      await update(ref(db, `rooms/${roomCode}`), { status: "finished" });
       return;
     }
 
     if (qIndex < questions.length - 1) {
       setQIndex((q) => q + 1);
-      setTime(20);
-      setSelected(null);
-      setShowAnswer(false);
+      resetQuestionState();
     } else {
       setScreen("result");
     }
@@ -387,27 +371,18 @@ export default function App() {
     setRoomCode("");
     setJoinCode("");
     setRoomData(null);
+    setRoomError("");
     setScreen("menu");
   };
 
-  const optionStyle = (i) => ({
-    display: "block",
-    width: "100%",
-    margin: "10px 0",
-    padding: "14px 16px",
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.2)",
-    color: "white",
-    background: showAnswer && i === current.answer ? "#16a34a" : showAnswer && i === selected ? "#dc2626" : "rgba(255,255,255,0.14)",
-    textAlign: "left",
-    cursor: "pointer",
-    fontSize: 16,
-  });
+  const pageStyle = screen === "game"
+    ? { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, background: time <= 5 ? "linear-gradient(135deg,#991b1b,#7c2d12)" : "linear-gradient(135deg,#312e81,#4338ca,#1d4ed8)", color: "white", fontFamily: "Arial, sans-serif" }
+    : { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, background: "linear-gradient(135deg,#2563eb,#3b82f6,#4338ca)", color: "white", fontFamily: "Arial, sans-serif" };
 
   if (screen === "onlineLobby") {
     return (
-      <div style={styles.page}>
-        <div style={{ ...styles.card, maxWidth: 760 }}>
+      <div style={pageStyle}>
+        <div style={{ width: "100%", maxWidth: 760, background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.20)", borderRadius: 28, padding: 28, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,0.25)", backdropFilter: "blur(12px)" }}>
           <h1 style={{ marginTop: 0 }}>🌐 Online Oda</h1>
           <p>Oda Kodu: <b>{roomCode || "----"}</b></p>
 
@@ -419,13 +394,10 @@ export default function App() {
                 onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
                 style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: 0, fontSize: 16 }}
               />
-            </div>
-          )}
-
-          {!roomCode && (
-            <div style={{ display: "flex", gap: 12, justifyContent: "center", marginBottom: 14, flexWrap: "wrap" }}>
-              <button onClick={createRoom} style={{ padding: "12px 18px", borderRadius: 12, border: 0, cursor: "pointer", fontWeight: 700 }}>Oda Kur</button>
-              <button onClick={joinRoom} style={{ padding: "12px 18px", borderRadius: 12, border: 0, cursor: "pointer", fontWeight: 700 }}>Odaya Katıl</button>
+              <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 12, flexWrap: "wrap" }}>
+                <button onClick={createRoom} style={{ padding: "12px 18px", borderRadius: 12, border: 0, cursor: "pointer", fontWeight: 700 }}>Oda Kur</button>
+                <button onClick={joinRoom} style={{ padding: "12px 18px", borderRadius: 12, border: 0, cursor: "pointer", fontWeight: 700 }}>Odaya Katıl</button>
+              </div>
             </div>
           )}
 
@@ -448,16 +420,18 @@ export default function App() {
               Geri
             </button>
           </div>
+
+          <p style={{ marginTop: 12, opacity: 0.75, fontSize: 13 }}>Online çalışmıyorsa Firebase Realtime Database Rules kısmını aç.</p>
         </div>
       </div>
     );
   }
 
   if (screen === "result") {
-    const finalScore = gameType === "online" ? myOnlineScore : score;
+    const finalScore = gameType === "online" ? (me?.score || 0) : score;
     return (
-      <div style={styles.page}>
-        <div style={{ ...styles.card, maxWidth: 640 }}>
+      <div style={pageStyle}>
+        <div style={{ width: "100%", maxWidth: 640, background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.20)", borderRadius: 28, padding: 28, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,0.25)", backdropFilter: "blur(12px)" }}>
           <h1 style={{ marginTop: 0 }}>🏆 Oyun Bitti</h1>
           <h2>{avatar} {name}</h2>
           <p style={{ fontSize: 34, fontWeight: 800 }}>Skor: {finalScore}</p>
@@ -474,11 +448,9 @@ export default function App() {
             </div>
           )}
 
-          <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 18, flexWrap: "wrap" }}>
-            <button onClick={() => { setScreen("menu"); setQIndex(0); setScore(0); setCombo(0); setTime(20); }} style={{ padding: "12px 18px", borderRadius: 12, border: 0, cursor: "pointer", fontWeight: 700 }}>
-              Ana Menü
-            </button>
-          </div>
+          <button onClick={() => { setScreen("menu"); setQIndex(0); setScore(0); setCombo(0); resetQuestionState(); }} style={{ marginTop: 16, padding: "12px 18px", borderRadius: 12, border: 0, cursor: "pointer", fontWeight: 700 }}>
+            Ana Menü
+          </button>
         </div>
       </div>
     );
@@ -486,15 +458,15 @@ export default function App() {
 
   if (screen === "game" && current) {
     return (
-      <div style={{ ...styles.page, background: "linear-gradient(135deg,#312e81,#4338ca,#1d4ed8)" }}>
-        <div style={{ ...styles.card, maxWidth: 760 }}>
+      <div style={pageStyle}>
+        <div style={{ width: "100%", maxWidth: 760, background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.20)", borderRadius: 28, padding: 28, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,0.25)", backdropFilter: "blur(12px)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <div>
+            <div style={{ textAlign: "left" }}>
               <div style={{ fontSize: 24, fontWeight: 700 }}>{avatar} {name}</div>
               <div style={{ opacity: 0.8 }}>{exam} • {lesson}</div>
             </div>
             <div style={{ textAlign: "right" }}>
-              <div style={{ fontWeight: 700 }}>Skor: {gameType === "online" ? myOnlineScore : score}</div>
+              <div style={{ fontWeight: 700 }}>Skor: {gameType === "online" ? (me?.score || 0) : score}</div>
               <div style={{ opacity: 0.8 }}>🔥 Combo: {combo}</div>
             </div>
           </div>
@@ -507,7 +479,23 @@ export default function App() {
           <div style={{ fontSize: 28, fontWeight: 800, marginBottom: 18 }}>{current.question}</div>
 
           {current.options.map((opt, i) => (
-            <button key={i} onClick={() => answer(i)} style={optionStyle(i)}>
+            <button
+              key={i}
+              onClick={() => answerQuestion(i)}
+              style={{
+                display: "block",
+                width: "100%",
+                margin: "10px 0",
+                padding: "14px 16px",
+                borderRadius: 14,
+                border: "1px solid rgba(255,255,255,0.2)",
+                color: "white",
+                background: showAnswer && i === current.answer ? "#16a34a" : showAnswer && i === selected ? "#dc2626" : "rgba(255,255,255,0.14)",
+                textAlign: "left",
+                cursor: "pointer",
+                fontSize: 16,
+              }}
+            >
               {opt}
             </button>
           ))}
@@ -521,15 +509,14 @@ export default function App() {
                   <span>{p.score}</span>
                 </div>
               ))}
+              <p style={{ marginBottom: 0, marginTop: 8, opacity: 0.8 }}>{everyoneAnswered ? "Herkes cevapladı" : "Herkes cevaplayınca sonraki soruya geçilir"}</p>
             </div>
           )}
 
-          {showAnswer && (
-            <div style={{ marginTop: 16 }}>
-              <button onClick={next} style={{ padding: "12px 18px", borderRadius: 12, border: 0, cursor: "pointer", fontWeight: 700 }}>
-                {qIndex < questions.length - 1 ? "Sonraki" : "Bitir"}
-              </button>
-            </div>
+          {showAnswer && (gameType === "offline" || (gameType === "online" && everyoneAnswered && isHost)) && (
+            <button onClick={nextQuestion} style={{ marginTop: 16, padding: "12px 18px", borderRadius: 12, border: 0, cursor: "pointer", fontWeight: 700 }}>
+              {qIndex < questions.length - 1 ? "Sonraki" : "Bitir"}
+            </button>
           )}
         </div>
       </div>
@@ -537,8 +524,8 @@ export default function App() {
   }
 
   return (
-    <div style={styles.page}>
-      <div style={styles.card}>
+    <div style={pageStyle}>
+      <div style={{ width: "100%", maxWidth: 720, background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.20)", borderRadius: 28, padding: 28, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,0.25)", backdropFilter: "blur(12px)" }}>
         <h1 style={{ margin: 0, fontSize: 44, fontWeight: 800 }}>YKS Turnuva</h1>
         <p style={{ marginTop: 10, opacity: 0.75 }}>İsmini yaz, avatarını seç, alanını ve dersini belirle, sonra yarışmaya başla.</p>
 
@@ -554,19 +541,13 @@ export default function App() {
           {avatars.map((item) => {
             const active = avatar === item.emoji;
             return (
-              <button
-                key={item.label}
-                onClick={() => setAvatar(item.emoji)}
-                style={{ borderRadius: 18, border: active ? "2px solid rgba(255,255,255,0.95)" : "1px solid rgba(255,255,255,0.2)", background: active ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.10)", color: "white", padding: "18px 8px", cursor: "pointer" }}
-              >
+              <button key={item.label} onClick={() => setAvatar(item.emoji)} style={{ borderRadius: 18, border: active ? "2px solid rgba(255,255,255,0.95)" : "1px solid rgba(255,255,255,0.2)", background: active ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.10)", color: "white", padding: "18px 8px", cursor: "pointer" }}>
                 <div style={{ fontSize: 34, marginBottom: 8 }}>{item.emoji}</div>
                 <div style={{ fontSize: 14, fontWeight: 600 }}>{item.label}</div>
               </button>
             );
           })}
         </div>
-
-        <div style={{ marginTop: 12, opacity: 0.6, fontSize: 12 }}>Hazır çizgi film karakterleri yerine oyun için uygun, çizgi film tarzı avatarlar eklendi.</div>
 
         <div style={{ marginTop: 22, fontWeight: 700 }}>Oyun Modu Seç:</div>
         <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 14, flexWrap: "wrap" }}>
@@ -591,6 +572,8 @@ export default function App() {
           </>
         )}
 
+        {gameType === "online" && <p style={{ marginTop: 12, opacity: 0.7 }}>Online için Firebase Realtime Database Rules açık olmalı.</p>}
+
         <button
           onClick={() => {
             if (!name || !exam || !lesson) {
@@ -598,7 +581,7 @@ export default function App() {
               return;
             }
             if (gameType === "online") {
-              createRoom();
+              setScreen("onlineLobby");
               return;
             }
             startOffline();
