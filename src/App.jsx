@@ -25,6 +25,9 @@ const avatars = [
   { emoji: "🤓", label: "Gülücük Dâhi" },
 ];
 
+const tytLessons = ["Türkçe", "Matematik", "Fen", "Sosyal"];
+const aytLessons = ["Matematik", "Fizik", "Kimya", "Biyoloji", "Edebiyat"];
+
 const questionBank = {
   Türkçe: [
     { question: "Aşağıdakilerden hangisi mecaz anlamda kullanılmıştır?", options: ["Tatlı elma", "Sıcak bakış", "Soğuk su", "Mavi kalem", "Uzun yol"], answer: 1 },
@@ -124,7 +127,7 @@ const questionBank = {
   ],
 };
 
-function shuffle(items) {
+function shuffleQuestions(items) {
   const copy = [...items];
   for (let i = copy.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -136,6 +139,37 @@ function shuffle(items) {
 function makeRoomCode() {
   return Math.random().toString(36).slice(2, 6).toUpperCase();
 }
+
+const pageStyle = (danger = false) => ({
+  minHeight: "100vh",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 16,
+  background: danger ? "linear-gradient(135deg,#991b1b,#7c2d12)" : "linear-gradient(135deg,#2563eb,#3b82f6,#4338ca)",
+  color: "white",
+  fontFamily: "Arial, sans-serif",
+});
+
+const cardStyle = {
+  width: "100%",
+  maxWidth: 760,
+  background: "rgba(255,255,255,0.10)",
+  border: "1px solid rgba(255,255,255,0.20)",
+  borderRadius: 28,
+  padding: 28,
+  textAlign: "center",
+  boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
+  backdropFilter: "blur(12px)",
+};
+
+const buttonBase = {
+  padding: "10px 16px",
+  borderRadius: 10,
+  border: 0,
+  cursor: "pointer",
+  fontWeight: 700,
+};
 
 export default function App() {
   const correctSound = useMemo(() => (typeof Audio !== "undefined" ? new Audio("https://actions.google.com/sounds/v1/cartoon/pop.ogg") : null), []);
@@ -160,7 +194,7 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [showAnswer, setShowAnswer] = useState(false);
 
-  const lessons = exam === "TYT" ? ["Türkçe", "Matematik", "Fen", "Sosyal"] : exam === "AYT" ? ["Matematik", "Fizik", "Kimya", "Biyoloji", "Edebiyat"] : [];
+  const lessons = exam === "TYT" ? tytLessons : exam === "AYT" ? aytLessons : [];
   const current = questions[qIndex];
   const players = roomData ? Object.values(roomData.players || {}) : [];
   const ranking = [...players].sort((a, b) => b.score - a.score);
@@ -170,7 +204,7 @@ export default function App() {
 
   useEffect(() => {
     if (screen !== "game" || showAnswer || !current) return;
-    const id = setInterval(() => {
+    const timer = setInterval(() => {
       setTime((t) => {
         if (t <= 1) {
           setShowAnswer(true);
@@ -179,13 +213,21 @@ export default function App() {
         return t - 1;
       });
     }, 1000);
-    return () => clearInterval(id);
+    return () => clearInterval(timer);
   }, [screen, showAnswer, current]);
+
+  useEffect(() => {
+    if (screen === "game") {
+      setTime(20);
+      setSelected(null);
+      setShowAnswer(false);
+    }
+  }, [qIndex, screen]);
 
   useEffect(() => {
     if (!db || !roomCode || gameType !== "online") return;
     const roomRef = ref(db, `rooms/${roomCode}`);
-    const handler = onValue(roomRef, (snapshot) => {
+    const unsubscribe = onValue(roomRef, (snapshot) => {
       const value = snapshot.val();
       setRoomData(value);
       if (!value) return;
@@ -197,7 +239,7 @@ export default function App() {
       if (value.status === "playing") setScreen("game");
       if (value.status === "finished") setScreen("result");
     });
-    return () => off(roomRef, "value", handler);
+    return () => off(roomRef, "value", unsubscribe);
   }, [roomCode, gameType]);
 
   const playSound = (sound) => {
@@ -206,25 +248,21 @@ export default function App() {
     sound.play().catch(() => {});
   };
 
-  const resetQuestionState = () => {
-    setTime(20);
-    setSelected(null);
-    setShowAnswer(false);
-  };
-
   const startOffline = () => {
-    const chosen = shuffle(questionBank[lesson] || []).slice(0, 10);
-    setQuestions(chosen);
+    const picked = shuffleQuestions(questionBank[lesson] || []).slice(0, 10);
+    setQuestions(picked);
     setQIndex(0);
     setScore(0);
     setCombo(0);
-    resetQuestionState();
+    setTime(20);
+    setSelected(null);
+    setShowAnswer(false);
     setScreen("game");
   };
 
   const createRoom = async () => {
     if (!db) {
-      alert("Firebase bağlantısı yok. Realtime Database ve Rules kısmını kontrol et.");
+      alert("Firebase bağlantısı yok. Realtime Database açık mı kontrol et.");
       return;
     }
     if (!name || !exam || !lesson) {
@@ -258,22 +296,26 @@ export default function App() {
       setScreen("onlineLobby");
     } catch (error) {
       console.error(error);
-      setRoomError("Oda kurma başarısız. Firebase Rules kısmını aç.");
-      alert("Oda kurma başarısız. Firebase Rules kısmını aç.");
+      setRoomError("Oda kurulamadı.");
+      alert("Oda kurulamadı.");
     }
   };
 
   const joinRoom = async () => {
     if (!db) {
-      alert("Firebase bağlantısı yok. Realtime Database ve Rules kısmını kontrol et.");
+      alert("Firebase bağlantısı yok. Realtime Database açık mı kontrol et.");
       return;
     }
-    const code = joinCode.trim().toUpperCase();
-    if (!name || !code) {
-      setRoomError("İsim yaz ve oda kodu gir.");
+    if (!name) {
+      setRoomError("Önce ismini yaz.");
       return;
     }
     try {
+      const code = joinCode.trim().toUpperCase();
+      if (!code) {
+        setRoomError("Oda kodu gir.");
+        return;
+      }
       const roomRef = ref(db, `rooms/${code}`);
       const snap = await get(roomRef);
       if (!snap.exists()) {
@@ -300,18 +342,17 @@ export default function App() {
       setScreen("onlineLobby");
     } catch (error) {
       console.error(error);
-      setRoomError("Odaya girilemedi. Firebase Rules kısmını aç.");
-      alert("Odaya girilemedi. Firebase Rules kısmını aç.");
+      setRoomError("Odaya girilemedi.");
+      alert("Odaya girilemedi.");
     }
   };
 
-  const startOnlineGame = async () => {
+  const startOnlineMatch = async () => {
     if (!db || !roomCode || !isHost) return;
     await update(ref(db, `rooms/${roomCode}`), {
       status: "playing",
       questionIndex: 0,
     });
-    resetQuestionState();
   };
 
   const answerQuestion = async (i) => {
@@ -348,7 +389,6 @@ export default function App() {
           payload[`players/${id}/selected`] = null;
         });
         await update(ref(db, `rooms/${roomCode}`), payload);
-        resetQuestionState();
       } else {
         await update(ref(db, `rooms/${roomCode}`), { status: "finished" });
       }
@@ -357,7 +397,6 @@ export default function App() {
 
     if (qIndex < questions.length - 1) {
       setQIndex((q) => q + 1);
-      resetQuestionState();
     } else {
       setScreen("result");
     }
@@ -375,19 +414,15 @@ export default function App() {
     setScreen("menu");
   };
 
-  const pageStyle = screen === "game"
-    ? { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, background: time <= 5 ? "linear-gradient(135deg,#991b1b,#7c2d12)" : "linear-gradient(135deg,#312e81,#4338ca,#1d4ed8)", color: "white", fontFamily: "Arial, sans-serif" }
-    : { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, background: "linear-gradient(135deg,#2563eb,#3b82f6,#4338ca)", color: "white", fontFamily: "Arial, sans-serif" };
-
   if (screen === "onlineLobby") {
     return (
-      <div style={pageStyle}>
-        <div style={{ width: "100%", maxWidth: 760, background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.20)", borderRadius: 28, padding: 28, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,0.25)", backdropFilter: "blur(12px)" }}>
+      <div style={pageStyle()}>
+        <div style={cardStyle}>
           <h1 style={{ marginTop: 0 }}>🌐 Online Oda</h1>
           <p>Oda Kodu: <b>{roomCode || "----"}</b></p>
 
           {!roomCode && (
-            <div style={{ maxWidth: 320, margin: "0 auto 16px auto" }}>
+            <div style={{ maxWidth: 340, margin: "0 auto 16px auto" }}>
               <input
                 placeholder="Oda kodu gir"
                 value={joinCode}
@@ -395,8 +430,8 @@ export default function App() {
                 style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: 0, fontSize: 16 }}
               />
               <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 12, flexWrap: "wrap" }}>
-                <button onClick={createRoom} style={{ padding: "12px 18px", borderRadius: 12, border: 0, cursor: "pointer", fontWeight: 700 }}>Oda Kur</button>
-                <button onClick={joinRoom} style={{ padding: "12px 18px", borderRadius: 12, border: 0, cursor: "pointer", fontWeight: 700 }}>Odaya Katıl</button>
+                <button onClick={createRoom} style={buttonBase}>Oda Kur</button>
+                <button onClick={joinRoom} style={buttonBase}>Odaya Katıl</button>
               </div>
             </div>
           )}
@@ -413,15 +448,9 @@ export default function App() {
           </div>
 
           <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 18, flexWrap: "wrap" }}>
-            <button onClick={startOnlineGame} disabled={!isHost || ranking.length < 2} style={{ padding: "12px 18px", borderRadius: 12, border: 0, cursor: "pointer", fontWeight: 700 }}>
-              Maçı Başlat
-            </button>
-            <button onClick={leaveRoom} style={{ padding: "12px 18px", borderRadius: 12, border: 0, cursor: "pointer", fontWeight: 700 }}>
-              Geri
-            </button>
+            <button onClick={startOnlineMatch} disabled={!isHost || ranking.length < 2} style={buttonBase}>Maçı Başlat</button>
+            <button onClick={leaveRoom} style={buttonBase}>Geri</button>
           </div>
-
-          <p style={{ marginTop: 12, opacity: 0.75, fontSize: 13 }}>Online çalışmıyorsa Firebase Realtime Database Rules kısmını aç.</p>
         </div>
       </div>
     );
@@ -430,8 +459,8 @@ export default function App() {
   if (screen === "result") {
     const finalScore = gameType === "online" ? (me?.score || 0) : score;
     return (
-      <div style={pageStyle}>
-        <div style={{ width: "100%", maxWidth: 640, background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.20)", borderRadius: 28, padding: 28, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,0.25)", backdropFilter: "blur(12px)" }}>
+      <div style={pageStyle()}>
+        <div style={{ ...cardStyle, maxWidth: 640 }}>
           <h1 style={{ marginTop: 0 }}>🏆 Oyun Bitti</h1>
           <h2>{avatar} {name}</h2>
           <p style={{ fontSize: 34, fontWeight: 800 }}>Skor: {finalScore}</p>
@@ -448,7 +477,18 @@ export default function App() {
             </div>
           )}
 
-          <button onClick={() => { setScreen("menu"); setQIndex(0); setScore(0); setCombo(0); resetQuestionState(); }} style={{ marginTop: 16, padding: "12px 18px", borderRadius: 12, border: 0, cursor: "pointer", fontWeight: 700 }}>
+          <button
+            onClick={() => {
+              setScreen("menu");
+              setQIndex(0);
+              setScore(0);
+              setCombo(0);
+              setTime(20);
+              setSelected(null);
+              setShowAnswer(false);
+            }}
+            style={{ ...buttonBase, marginTop: 14 }}
+          >
             Ana Menü
           </button>
         </div>
@@ -458,8 +498,8 @@ export default function App() {
 
   if (screen === "game" && current) {
     return (
-      <div style={pageStyle}>
-        <div style={{ width: "100%", maxWidth: 760, background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.20)", borderRadius: 28, padding: 28, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,0.25)", backdropFilter: "blur(12px)" }}>
+      <div style={pageStyle(time <= 5)}>
+        <div style={cardStyle}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <div style={{ textAlign: "left" }}>
               <div style={{ fontSize: 24, fontWeight: 700 }}>{avatar} {name}</div>
@@ -514,7 +554,7 @@ export default function App() {
           )}
 
           {showAnswer && (gameType === "offline" || (gameType === "online" && everyoneAnswered && isHost)) && (
-            <button onClick={nextQuestion} style={{ marginTop: 16, padding: "12px 18px", borderRadius: 12, border: 0, cursor: "pointer", fontWeight: 700 }}>
+            <button onClick={nextQuestion} style={{ ...buttonBase, marginTop: 16 }}>
               {qIndex < questions.length - 1 ? "Sonraki" : "Bitir"}
             </button>
           )}
@@ -524,8 +564,8 @@ export default function App() {
   }
 
   return (
-    <div style={pageStyle}>
-      <div style={{ width: "100%", maxWidth: 720, background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.20)", borderRadius: 28, padding: 28, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,0.25)", backdropFilter: "blur(12px)" }}>
+    <div style={pageStyle()}>
+      <div style={cardStyle}>
         <h1 style={{ margin: 0, fontSize: 44, fontWeight: 800 }}>YKS Turnuva</h1>
         <p style={{ marginTop: 10, opacity: 0.75 }}>İsmini yaz, avatarını seç, alanını ve dersini belirle, sonra yarışmaya başla.</p>
 
@@ -541,7 +581,18 @@ export default function App() {
           {avatars.map((item) => {
             const active = avatar === item.emoji;
             return (
-              <button key={item.label} onClick={() => setAvatar(item.emoji)} style={{ borderRadius: 18, border: active ? "2px solid rgba(255,255,255,0.95)" : "1px solid rgba(255,255,255,0.2)", background: active ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.10)", color: "white", padding: "18px 8px", cursor: "pointer" }}>
+              <button
+                key={item.label}
+                onClick={() => setAvatar(item.emoji)}
+                style={{
+                  borderRadius: 18,
+                  border: active ? "2px solid rgba(255,255,255,0.95)" : "1px solid rgba(255,255,255,0.2)",
+                  background: active ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.10)",
+                  color: "white",
+                  padding: "18px 8px",
+                  cursor: "pointer",
+                }}
+              >
                 <div style={{ fontSize: 34, marginBottom: 8 }}>{item.emoji}</div>
                 <div style={{ fontSize: 14, fontWeight: 600 }}>{item.label}</div>
               </button>
@@ -551,14 +602,14 @@ export default function App() {
 
         <div style={{ marginTop: 22, fontWeight: 700 }}>Oyun Modu Seç:</div>
         <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 14, flexWrap: "wrap" }}>
-          <button onClick={() => setGameType("offline")} style={{ padding: "10px 20px", borderRadius: 10, border: 0, cursor: "pointer", background: gameType === "offline" ? "white" : "rgba(255,255,255,0.16)", color: gameType === "offline" ? "#111827" : "white", fontWeight: 700 }}>Offline</button>
-          <button onClick={() => setGameType("online")} style={{ padding: "10px 20px", borderRadius: 10, border: 0, cursor: "pointer", background: gameType === "online" ? "white" : "rgba(255,255,255,0.16)", color: gameType === "online" ? "#111827" : "white", fontWeight: 700 }}>Online</button>
+          <button onClick={() => setGameType("offline")} style={{ ...buttonBase, background: gameType === "offline" ? "white" : "rgba(255,255,255,0.16)", color: gameType === "offline" ? "#111827" : "white" }}>Offline</button>
+          <button onClick={() => setGameType("online")} style={{ ...buttonBase, background: gameType === "online" ? "white" : "rgba(255,255,255,0.16)", color: gameType === "online" ? "#111827" : "white" }}>Online</button>
         </div>
 
         <div style={{ marginTop: 22, fontWeight: 700 }}>Sınav Türü Seç:</div>
         <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 14 }}>
-          <button onClick={() => { setExam("TYT"); setLesson(""); }} style={{ padding: "10px 20px", borderRadius: 10, border: 0, cursor: "pointer", background: exam === "TYT" ? "white" : "rgba(255,255,255,0.16)", color: exam === "TYT" ? "#111827" : "white", fontWeight: 700 }}>TYT</button>
-          <button onClick={() => { setExam("AYT"); setLesson(""); }} style={{ padding: "10px 20px", borderRadius: 10, border: 0, cursor: "pointer", background: exam === "AYT" ? "white" : "rgba(255,255,255,0.16)", color: exam === "AYT" ? "#111827" : "white", fontWeight: 700 }}>AYT</button>
+          <button onClick={() => { setExam("TYT"); setLesson(""); }} style={{ ...buttonBase, background: exam === "TYT" ? "white" : "rgba(255,255,255,0.16)", color: exam === "TYT" ? "#111827" : "white" }}>TYT</button>
+          <button onClick={() => { setExam("AYT"); setLesson(""); }} style={{ ...buttonBase, background: exam === "AYT" ? "white" : "rgba(255,255,255,0.16)", color: exam === "AYT" ? "#111827" : "white" }}>AYT</button>
         </div>
 
         {exam && (
@@ -566,13 +617,11 @@ export default function App() {
             <div style={{ marginTop: 22, fontWeight: 700 }}>Ders Seç:</div>
             <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap", marginTop: 14 }}>
               {lessons.map((item) => (
-                <button key={item} onClick={() => setLesson(item)} style={{ padding: "10px 16px", borderRadius: 10, border: 0, cursor: "pointer", background: lesson === item ? "white" : "rgba(255,255,255,0.16)", color: lesson === item ? "#111827" : "white", fontWeight: 700 }}>{item}</button>
+                <button key={item} onClick={() => setLesson(item)} style={{ ...buttonBase, background: lesson === item ? "white" : "rgba(255,255,255,0.16)", color: lesson === item ? "#111827" : "white" }}>{item}</button>
               ))}
             </div>
           </>
         )}
-
-        {gameType === "online" && <p style={{ marginTop: 12, opacity: 0.7 }}>Online için Firebase Realtime Database Rules açık olmalı.</p>}
 
         <button
           onClick={() => {
@@ -581,12 +630,13 @@ export default function App() {
               return;
             }
             if (gameType === "online") {
+              setRoomError("");
               setScreen("onlineLobby");
               return;
             }
             startOffline();
           }}
-          style={{ marginTop: 28, padding: "12px 26px", borderRadius: 12, border: 0, cursor: "pointer", background: "white", color: "#111827", fontWeight: 800, fontSize: 16 }}
+          style={{ ...buttonBase, marginTop: 28, padding: "12px 26px", background: "white", color: "#111827", fontSize: 16 }}
         >
           Oyuna Başla
         </button>
