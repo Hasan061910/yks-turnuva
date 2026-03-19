@@ -5,7 +5,7 @@ import { getDatabase, ref, set, get, onValue, update, off, remove } from "fireba
 const firebaseConfig = {
   apiKey: "AIzaSyA07Q5-30EJsoJ-MVjWNLvj19dAUrFce4",
   authDomain: "yks-yaris.firebaseapp.com",
-  databaseURL: "https://yks-yaris-default-rtdb.firebaseio.com",
+ databaseURL: "https://yks-yaris-default-rtdb.europe-west1.firebasedatabase.app",
   projectId: "yks-yaris",
   storageBucket: "yks-yaris.firebasestorage.app",
   messagingSenderId: "602435856699",
