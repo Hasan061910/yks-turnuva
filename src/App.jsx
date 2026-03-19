@@ -1,19 +1,29 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getDatabase, ref, set, get, onValue, update, off, remove } from "firebase/database";
+import { getDatabase, ref, set, get, onValue, update, remove } from "firebase/database";
 
 const firebaseConfig = {
   apiKey: "AIzaSyA07Q5-30EJsoJ-MVjWNLvj19dAUrFce4",
   authDomain: "yks-yaris.firebaseapp.com",
- databaseURL: "https://yks-yaris-default-rtdb.europe-west1.firebasedatabase.app",
+  databaseURL: "https://yks-yaris-default-rtdb.europe-west1.firebasedatabase.app",
   projectId: "yks-yaris",
   storageBucket: "yks-yaris.firebasestorage.app",
   messagingSenderId: "602435856699",
   appId: "1:602435856699:web:c974154eeb4a2bf711af1e",
 };
 
-const firebaseReady = Boolean(firebaseConfig.apiKey && firebaseConfig.databaseURL && firebaseConfig.projectId);
-const app = firebaseReady ? (getApps().length ? getApp() : initializeApp(firebaseConfig)) : null;
+const firebaseReady = Boolean(
+  firebaseConfig.apiKey &&
+    firebaseConfig.databaseURL &&
+    firebaseConfig.projectId
+);
+
+const app = firebaseReady
+  ? getApps().length
+    ? getApp()
+    : initializeApp(firebaseConfig)
+  : null;
+
 const db = app ? getDatabase(app) : null;
 
 const avatars = [
@@ -140,28 +150,53 @@ function makeRoomCode() {
   return Math.random().toString(36).slice(2, 6).toUpperCase();
 }
 
+function tagDifficulty(pool) {
+  const shuffled = shuffleQuestions(pool);
+  return shuffled.map((q, i, arr) => {
+    let difficulty = "Orta";
+    if (i < Math.ceil(arr.length / 3)) difficulty = "Kolay";
+    else if (i >= Math.floor((arr.length * 2) / 3)) difficulty = "Zor";
+    return { ...q, difficulty };
+  });
+}
+
+function prepareQuestions(pool, difficulty) {
+  const tagged = tagDifficulty(pool || []);
+  if (difficulty === "Karışık") return shuffleQuestions(tagged).slice(0, 10);
+
+  const filtered = tagged.filter((q) => q.difficulty === difficulty);
+  if (filtered.length >= 10) return shuffleQuestions(filtered).slice(0, 10);
+
+  return shuffleQuestions([
+    ...filtered,
+    ...tagged.filter((q) => q.difficulty !== difficulty),
+  ]).slice(0, 10);
+}
+
 const pageStyle = (danger = false) => ({
   minHeight: "100vh",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
   padding: 16,
-  background: danger ? "linear-gradient(135deg,#991b1b,#7c2d12)" : "linear-gradient(135deg,#2563eb,#3b82f6,#4338ca)",
+  background: danger
+    ? "linear-gradient(135deg,#991b1b,#7c2d12)"
+    : "linear-gradient(135deg,#2563eb,#3b82f6,#4338ca)",
   color: "white",
   fontFamily: "Arial, sans-serif",
 });
 
-const cardStyle = {
+const cardStyle = (isMobile = false) => ({
   width: "100%",
-  maxWidth: 760,
+  maxWidth: 860,
   background: "rgba(255,255,255,0.10)",
   border: "1px solid rgba(255,255,255,0.20)",
-  borderRadius: 28,
-  padding: 28,
+  borderRadius: isMobile ? 20 : 28,
+  padding: isMobile ? 18 : 28,
   textAlign: "center",
   boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
   backdropFilter: "blur(12px)",
-};
+});
 
 const buttonBase = {
   padding: "10px 16px",
@@ -172,27 +207,54 @@ const buttonBase = {
 };
 
 export default function App() {
-  const correctSound = useMemo(() => (typeof Audio !== "undefined" ? new Audio("https://actions.google.com/sounds/v1/cartoon/pop.ogg") : null), []);
-  const wrongSound = useMemo(() => (typeof Audio !== "undefined" ? new Audio("https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg") : null), []);
+  const correctSound = useMemo(
+    () =>
+      typeof Audio !== "undefined"
+        ? new Audio("https://actions.google.com/sounds/v1/cartoon/pop.ogg")
+        : null,
+    []
+  );
+
+  const wrongSound = useMemo(
+    () =>
+      typeof Audio !== "undefined"
+        ? new Audio("https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg")
+        : null,
+    []
+  );
+
+  const winSound = useMemo(
+    () =>
+      typeof Audio !== "undefined"
+        ? new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg")
+        : null,
+    []
+  );
 
   const [screen, setScreen] = useState("menu");
   const [name, setName] = useState("");
   const [avatar, setAvatar] = useState(avatars[0].emoji);
   const [exam, setExam] = useState("");
   const [lesson, setLesson] = useState("");
+  const [difficulty, setDifficulty] = useState("Karışık");
   const [gameType, setGameType] = useState("offline");
   const [joinCode, setJoinCode] = useState("");
   const [roomCode, setRoomCode] = useState("");
   const [roomData, setRoomData] = useState(null);
   const [roomError, setRoomError] = useState("");
-  const [playerId] = useState(() => `player-${Math.random().toString(36).slice(2, 10)}`);
   const [questions, setQuestions] = useState([]);
   const [qIndex, setQIndex] = useState(0);
   const [score, setScore] = useState(0);
   const [combo, setCombo] = useState(0);
+  const [lastBonus, setLastBonus] = useState(0);
   const [time, setTime] = useState(20);
   const [selected, setSelected] = useState(null);
   const [showAnswer, setShowAnswer] = useState(false);
+  const [pulseLeader, setPulseLeader] = useState(true);
+  const [playerId] = useState(() => `player-${Math.random().toString(36).slice(2, 10)}`);
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" ? window.innerWidth < 700 : false
+  );
 
   const lessons = exam === "TYT" ? tytLessons : exam === "AYT" ? aytLessons : [];
   const current = questions[qIndex];
@@ -200,47 +262,100 @@ export default function App() {
   const ranking = [...players].sort((a, b) => b.score - a.score);
   const me = roomData?.players?.[playerId];
   const isHost = roomData?.hostId === playerId;
-  const everyoneAnswered = players.length > 0 && players.every((p) => p.answered);
+  const everyoneAnswered =
+    players.length > 0 && players.every((p) => p.answered || p.selected === -1);
 
   useEffect(() => {
-    if (screen !== "game" || showAnswer || !current) return;
-    const timer = setInterval(() => {
-      setTime((t) => {
-        if (t <= 1) {
-          setShowAnswer(true);
-          return 0;
-        }
-        return t - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [screen, showAnswer, current]);
+    const onResize = () => setIsMobile(window.innerWidth < 700);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  useEffect(() => {
+    if (screen === "result") {
+      const finalRanking = gameType === "online" ? ranking : [];
+      if (
+        (gameType === "offline" && score > 0) ||
+        (gameType === "online" && finalRanking[0]?.id === playerId)
+      ) {
+        winSound?.play().catch(() => {});
+      }
+    }
+  }, [screen, gameType, ranking, playerId, score, winSound]);
+
+  useEffect(() => {
+    if (!db || !roomCode || gameType !== "online") return;
+
+    const roomRef = ref(db, `rooms/${roomCode}`);
+    const unsubscribe = onValue(roomRef, (snapshot) => {
+      const value = snapshot.val();
+      setRoomData(value);
+
+      if (!value) {
+        setRoomError("Oda kapandı.");
+        setScreen("menu");
+        return;
+      }
+
+      setExam(value.exam || "");
+      setLesson(value.lesson || "");
+      setDifficulty(value.difficulty || "Karışık");
+      setQuestions(value.questions || []);
+      setQIndex(value.questionIndex || 0);
+
+      if (value.status === "lobby") setScreen("onlineLobby");
+      if (value.status === "playing") setScreen("game");
+      if (value.status === "finished") setScreen("result");
+    });
+
+    return () => unsubscribe();
+  }, [roomCode, gameType]);
 
   useEffect(() => {
     if (screen === "game") {
       setTime(20);
       setSelected(null);
       setShowAnswer(false);
+      setLastBonus(0);
     }
   }, [qIndex, screen]);
 
   useEffect(() => {
-    if (!db || !roomCode || gameType !== "online") return;
-    const roomRef = ref(db, `rooms/${roomCode}`);
-    const unsubscribe = onValue(roomRef, (snapshot) => {
-      const value = snapshot.val();
-      setRoomData(value);
-      if (!value) return;
-      setExam(value.exam);
-      setLesson(value.lesson);
-      setQuestions((questionBank[value.lesson] || []).slice(0, 10));
-      setQIndex(value.questionIndex || 0);
-      if (value.status === "lobby") setScreen("onlineLobby");
-      if (value.status === "playing") setScreen("game");
-      if (value.status === "finished") setScreen("result");
-    });
-    return () => off(roomRef, "value", unsubscribe);
-  }, [roomCode, gameType]);
+    if (screen !== "game" || showAnswer || !current) return;
+
+    const timer = setInterval(() => {
+      setTime((t) => {
+        if (t <= 1) {
+          clearInterval(timer);
+
+          if (
+            gameType === "online" &&
+            db &&
+            roomCode &&
+            !roomData?.players?.[playerId]?.answered
+          ) {
+            update(ref(db, `rooms/${roomCode}/players/${playerId}`), {
+              answered: true,
+              selected: -1,
+            }).catch(console.error);
+          }
+
+          setShowAnswer(true);
+          return 0;
+        }
+        return t - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [screen, showAnswer, current, gameType, roomCode, roomData, playerId]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setPulseLeader((v) => !v);
+    }, 700);
+    return () => clearInterval(timer);
+  }, []);
 
   const playSound = (sound) => {
     if (!sound) return;
@@ -248,8 +363,40 @@ export default function App() {
     sound.play().catch(() => {});
   };
 
+  const getOfflineScore = (isCorrect, currentCombo) => {
+    if (!isCorrect) return { gained: 0, newCombo: 0, bonus: 0 };
+    const newCombo = currentCombo + 1;
+    const bonus = newCombo % 3 === 0 ? 5 : 0;
+    return { gained: 10 + bonus, newCombo, bonus };
+  };
+
+  const getPlayerAnswerState = (player) => {
+    if (!showAnswer || !current) return "Bekliyor";
+    if (player.selected === -1) return "Süre doldu";
+    if (player.selected == null) return "Bekliyor";
+    return player.selected === current.answer ? "Doğru" : "Yanlış";
+  };
+
+  const getPlayerBadge = (player) => {
+    if (!player.answered && player.selected !== -1) return "⏳";
+    if (!showAnswer) return "✅";
+    if (player.selected === -1) return "⌛";
+    return player.selected === current?.answer ? "✅" : "❌";
+  };
+
+  const resetLocalGame = () => {
+    setQuestions([]);
+    setQIndex(0);
+    setScore(0);
+    setCombo(0);
+    setLastBonus(0);
+    setTime(20);
+    setSelected(null);
+    setShowAnswer(false);
+  };
+
   const startOffline = () => {
-    const picked = shuffleQuestions(questionBank[lesson] || []).slice(0, 10);
+    const picked = prepareQuestions(questionBank[lesson] || [], difficulty);
     setQuestions(picked);
     setQIndex(0);
     setScore(0);
@@ -257,6 +404,7 @@ export default function App() {
     setTime(20);
     setSelected(null);
     setShowAnswer(false);
+    setLastBonus(0);
     setScreen("game");
   };
 
@@ -267,21 +415,27 @@ export default function App() {
       alert(msg);
       return;
     }
+
     if (!db) {
-      const msg = "Firebase bağlantısı yok. Realtime Database açık mı kontrol et.";
+      const msg = "Firebase bağlantısı yok.";
       setRoomError(msg);
       alert(msg);
       return;
     }
+
     try {
       const code = makeRoomCode();
+      const pickedQuestions = prepareQuestions(questionBank[lesson] || [], difficulty);
+
       const room = {
         code,
         hostId: playerId,
         status: "lobby",
         exam,
         lesson,
+        difficulty,
         questionIndex: 0,
+        questions: pickedQuestions,
         players: {
           [playerId]: {
             id: playerId,
@@ -290,13 +444,15 @@ export default function App() {
             score: 0,
             answered: false,
             selected: null,
+            combo: 0,
           },
         },
       };
+
       await set(ref(db, `rooms/${code}`), room);
       setRoomCode(code);
       setJoinCode(code);
-      setRoomError(`Oda kuruldu: ${code}`);
+      setRoomError("");
       setScreen("onlineLobby");
     } catch (error) {
       console.error(error);
@@ -308,47 +464,58 @@ export default function App() {
 
   const joinRoom = async () => {
     if (!db) {
-      alert("Firebase bağlantısı yok. Realtime Database açık mı kontrol et.");
+      alert("Firebase bağlantısı yok.");
       return;
     }
+
     if (!name) {
       setRoomError("Önce ismini yaz.");
       return;
     }
+
     try {
       const code = joinCode.trim().toUpperCase();
       if (!code) {
         setRoomError("Oda kodu gir.");
         return;
       }
+
       const roomRef = ref(db, `rooms/${code}`);
       const snap = await get(roomRef);
+
       if (!snap.exists()) {
         setRoomError("Oda bulunamadı.");
         return;
       }
+
       const value = snap.val();
+
+      if ((value.status || "") !== "lobby") {
+        setRoomError("Maç başlamış, bu odaya şu an girilemez.");
+        return;
+      }
+
       if (Object.keys(value.players || {}).length >= 4) {
         setRoomError("Oda dolu.");
         return;
       }
-      await update(roomRef, {
-        [`players/${playerId}`]: {
-          id: playerId,
-          name,
-          avatar,
-          score: 0,
-          answered: false,
-          selected: null,
-        },
+
+      await set(ref(db, `rooms/${code}/players/${playerId}`), {
+        id: playerId,
+        name,
+        avatar,
+        score: 0,
+        answered: false,
+        selected: null,
+        combo: 0,
       });
+
       setRoomCode(code);
       setRoomError("");
       setScreen("onlineLobby");
     } catch (error) {
       console.error(error);
-      setRoomError("Odaya girilemedi.");
-      alert("Odaya girilemedi.");
+      setRoomError(`Odaya girilemedi: ${error?.message || "bilinmeyen hata"}`);
     }
   };
 
@@ -362,31 +529,52 @@ export default function App() {
 
   const answerQuestion = async (i) => {
     if (showAnswer || !current) return;
+
     setSelected(i);
     setShowAnswer(true);
+
     const ok = i === current.answer;
-    if (ok) {
-      setScore((s) => s + 10);
-      setCombo((c) => c + 1);
-      playSound(correctSound);
-    } else {
-      setCombo(0);
-      playSound(wrongSound);
+
+    if (gameType === "offline") {
+      const result = getOfflineScore(ok, combo);
+      setScore((s) => s + result.gained);
+      setCombo(result.newCombo);
+      setLastBonus(result.bonus);
+
+      if (ok) playSound(correctSound);
+      else {
+        setCombo(0);
+        setLastBonus(0);
+        playSound(wrongSound);
+      }
+
+      return;
     }
 
     if (gameType === "online" && db && roomCode) {
       const currentScore = roomData?.players?.[playerId]?.score || 0;
+      const currentComboOnline = roomData?.players?.[playerId]?.combo || 0;
+      const newCombo = ok ? currentComboOnline + 1 : 0;
+      const bonus = ok && newCombo % 3 === 0 ? 5 : 0;
+
       await update(ref(db, `rooms/${roomCode}/players/${playerId}`), {
         answered: true,
         selected: i,
-        score: ok ? currentScore + 10 : currentScore,
+        combo: newCombo,
+        score: ok ? currentScore + 10 + bonus : currentScore,
       });
+
+      setLastBonus(bonus);
+
+      if (ok) playSound(correctSound);
+      else playSound(wrongSound);
     }
   };
 
   const nextQuestion = async () => {
     if (gameType === "online") {
       if (!db || !roomCode || !isHost) return;
+
       if (qIndex < questions.length - 1) {
         const payload = { questionIndex: qIndex + 1 };
         Object.keys(roomData.players || {}).forEach((id) => {
@@ -408,23 +596,34 @@ export default function App() {
   };
 
   const leaveRoom = async () => {
-    if (db && roomCode) {
-      if (isHost) await remove(ref(db, `rooms/${roomCode}`));
-      else await remove(ref(db, `rooms/${roomCode}/players/${playerId}`));
+    try {
+      if (db && roomCode) {
+        if (isHost) await remove(ref(db, `rooms/${roomCode}`));
+        else await remove(ref(db, `rooms/${roomCode}/players/${playerId}`));
+      }
+    } catch (error) {
+      console.error(error);
     }
+
     setRoomCode("");
     setJoinCode("");
     setRoomData(null);
     setRoomError("");
+    resetLocalGame();
     setScreen("menu");
   };
 
   if (screen === "onlineLobby") {
     return (
       <div style={pageStyle()}>
-        <div style={cardStyle}>
-          <h1 style={{ marginTop: 0 }}>🌐 Online Oda</h1>
-          <p>Oda Kodu: <b>{roomCode || "----"}</b></p>
+        <div style={cardStyle(isMobile)}>
+          <h1 style={{ marginTop: 0, fontSize: isMobile ? 34 : 42 }}>🌐 Online Oda</h1>
+          <p>
+            Oda Kodu: <b>{roomCode || "----"}</b>
+          </p>
+          <p style={{ opacity: 0.85 }}>
+            {exam} {lesson ? `• ${lesson}` : ""} {difficulty ? `• ${difficulty}` : ""}
+          </p>
 
           {!roomCode && (
             <div style={{ maxWidth: 340, margin: "0 auto 16px auto" }}>
@@ -432,11 +631,29 @@ export default function App() {
                 placeholder="Oda kodu gir"
                 value={joinCode}
                 onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: 0, fontSize: 16 }}
+                style={{
+                  width: "100%",
+                  padding: "14px 16px",
+                  borderRadius: 12,
+                  border: 0,
+                  fontSize: 16,
+                }}
               />
-              <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 12, flexWrap: "wrap" }}>
-                <button onClick={createRoom} style={buttonBase}>Oda Kur</button>
-                <button onClick={joinRoom} style={buttonBase}>Odaya Katıl</button>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  justifyContent: "center",
+                  marginTop: 12,
+                  flexWrap: "wrap",
+                }}
+              >
+                <button onClick={createRoom} style={buttonBase}>
+                  Oda Kur
+                </button>
+                <button onClick={joinRoom} style={buttonBase}>
+                  Odaya Katıl
+                </button>
               </div>
             </div>
           )}
@@ -444,17 +661,55 @@ export default function App() {
           {roomError && <p style={{ color: "#fecaca" }}>{roomError}</p>}
 
           <div style={{ display: "grid", gap: 10, marginTop: 20 }}>
-            {ranking.map((p) => (
-              <div key={p.id} style={{ display: "flex", justifyContent: "space-between", padding: "12px 16px", borderRadius: 14, background: "rgba(255,255,255,0.12)" }}>
-                <span>{p.avatar} {p.name}{p.id === playerId ? " (Sen)" : ""}</span>
+            {ranking.map((p, i) => (
+              <div
+                key={p.id}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "12px 16px",
+                  borderRadius: 14,
+                  background:
+                    i === 0 && pulseLeader
+                      ? "rgba(250,204,21,0.25)"
+                      : "rgba(255,255,255,0.12)",
+                  transform: i === 0 && pulseLeader ? "scale(1.02)" : "scale(1)",
+                  transition: "0.25s",
+                }}
+              >
+                <span>
+                  {i === 0 ? "👑 " : ""}
+                  {p.avatar} {p.name}
+                  {p.id === playerId ? " (Sen)" : ""}
+                </span>
                 <span>{p.score}</span>
               </div>
             ))}
           </div>
 
-          <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 18, flexWrap: "wrap" }}>
-            <button onClick={startOnlineMatch} disabled={!isHost || ranking.length < 2} style={buttonBase}>Maçı Başlat</button>
-            <button onClick={leaveRoom} style={buttonBase}>Geri</button>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              gap: 12,
+              marginTop: 18,
+              flexWrap: "wrap",
+            }}
+          >
+            <button
+              onClick={startOnlineMatch}
+              disabled={!isHost || ranking.length < 2}
+              style={{
+                ...buttonBase,
+                opacity: !isHost || ranking.length < 2 ? 0.55 : 1,
+              }}
+            >
+              Maçı Başlat
+            </button>
+            <button onClick={leaveRoom} style={buttonBase}>
+              Geri
+            </button>
           </div>
         </div>
       </div>
@@ -462,20 +717,59 @@ export default function App() {
   }
 
   if (screen === "result") {
-    const finalScore = gameType === "online" ? (me?.score || 0) : score;
+    const finalScore = gameType === "online" ? me?.score || 0 : score;
+    const onlineWinner = ranking[0];
+
     return (
       <div style={pageStyle()}>
-        <div style={{ ...cardStyle, maxWidth: 640 }}>
+        <div style={{ ...cardStyle(isMobile), maxWidth: 700 }}>
           <h1 style={{ marginTop: 0 }}>🏆 Oyun Bitti</h1>
-          <h2>{avatar} {name}</h2>
+          <h2>
+            {avatar} {name}
+          </h2>
           <p style={{ fontSize: 34, fontWeight: 800 }}>Skor: {finalScore}</p>
+
+          {gameType === "online" && onlineWinner && (
+            <div
+              style={{
+                margin: "14px auto 10px",
+                padding: 14,
+                borderRadius: 16,
+                background: "rgba(250,204,21,0.22)",
+                maxWidth: 420,
+              }}
+            >
+              <div style={{ fontWeight: 800, fontSize: 22 }}>
+                👑 Kazanan: {onlineWinner.name}
+              </div>
+              <div>{onlineWinner.score} puan</div>
+            </div>
+          )}
 
           {gameType === "online" && (
             <div style={{ marginTop: 16, textAlign: "left" }}>
               <p style={{ textAlign: "center", fontWeight: 700 }}>Sıralama</p>
               {ranking.map((p, i) => (
-                <div key={p.id} style={{ display: "flex", justifyContent: "space-between", padding: "10px 14px", borderRadius: 12, marginBottom: 8, background: p.id === playerId ? "#facc15" : "rgba(255,255,255,0.12)", color: p.id === playerId ? "#111827" : "white" }}>
-                  <span>#{i + 1} {p.name}</span>
+                <div
+                  key={p.id}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    padding: "10px 14px",
+                    borderRadius: 12,
+                    marginBottom: 8,
+                    background:
+                      p.id === playerId
+                        ? "#facc15"
+                        : i === 0
+                        ? "rgba(250,204,21,0.25)"
+                        : "rgba(255,255,255,0.12)",
+                    color: p.id === playerId ? "#111827" : "white",
+                  }}
+                >
+                  <span>
+                    #{i + 1} {p.name}
+                  </span>
                   <span>{p.score}</span>
                 </div>
               ))}
@@ -484,13 +778,12 @@ export default function App() {
 
           <button
             onClick={() => {
+              setRoomCode("");
+              setJoinCode("");
+              setRoomData(null);
+              setRoomError("");
+              resetLocalGame();
               setScreen("menu");
-              setQIndex(0);
-              setScore(0);
-              setCombo(0);
-              setTime(20);
-              setSelected(null);
-              setShowAnswer(false);
             }}
             style={{ ...buttonBase, marginTop: 14 }}
           >
@@ -502,31 +795,78 @@ export default function App() {
   }
 
   if (screen === "game" && current) {
+    const myLiveScore = gameType === "online" ? me?.score || 0 : score;
+    const myLiveCombo = gameType === "online" ? me?.combo || 0 : combo;
+
     return (
       <div style={pageStyle(time <= 5)}>
-        <div style={cardStyle}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div style={cardStyle(isMobile)}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: isMobile ? "flex-start" : "center",
+              marginBottom: 16,
+              gap: 12,
+              flexDirection: isMobile ? "column" : "row",
+            }}
+          >
             <div style={{ textAlign: "left" }}>
-              <div style={{ fontSize: 24, fontWeight: 700 }}>{avatar} {name}</div>
-              <div style={{ opacity: 0.8 }}>{exam} • {lesson}</div>
+              <div style={{ fontSize: isMobile ? 20 : 24, fontWeight: 700 }}>
+                {avatar} {name}
+              </div>
+              <div style={{ opacity: 0.8 }}>
+                {exam} • {lesson} • {current.difficulty || difficulty}
+              </div>
             </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontWeight: 700 }}>Skor: {gameType === "online" ? (me?.score || 0) : score}</div>
-              <div style={{ opacity: 0.8 }}>🔥 Combo: {combo}</div>
+            <div style={{ textAlign: isMobile ? "left" : "right" }}>
+              <div style={{ fontWeight: 700 }}>Skor: {myLiveScore}</div>
+              <div style={{ opacity: 0.8 }}>🔥 Combo: {myLiveCombo}</div>
+              {lastBonus > 0 && <div style={{ color: "#fde68a" }}>+{lastBonus} bonus</div>}
             </div>
           </div>
 
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
-            <div>Soru {qIndex + 1} / {questions.length}</div>
+            <div>
+              Soru {qIndex + 1} / {questions.length}
+            </div>
             <div>⏱ {time}</div>
           </div>
 
-          <div style={{ fontSize: 28, fontWeight: 800, marginBottom: 18 }}>{current.question}</div>
+          <div
+            style={{
+              display: "inline-block",
+              padding: "6px 12px",
+              borderRadius: 999,
+              background:
+                current.difficulty === "Kolay"
+                  ? "rgba(34,197,94,0.22)"
+                  : current.difficulty === "Zor"
+                  ? "rgba(239,68,68,0.22)"
+                  : "rgba(250,204,21,0.22)",
+              marginBottom: 12,
+              fontWeight: 700,
+            }}
+          >
+            Zorluk: {current.difficulty || "Orta"}
+          </div>
+
+          <div
+            style={{
+              fontSize: isMobile ? 22 : 28,
+              fontWeight: 800,
+              marginBottom: 18,
+              lineHeight: 1.35,
+            }}
+          >
+            {current.question}
+          </div>
 
           {current.options.map((opt, i) => (
             <button
               key={i}
               onClick={() => answerQuestion(i)}
+              disabled={showAnswer}
               style={{
                 display: "block",
                 width: "100%",
@@ -535,34 +875,82 @@ export default function App() {
                 borderRadius: 14,
                 border: "1px solid rgba(255,255,255,0.2)",
                 color: "white",
-                background: showAnswer && i === current.answer ? "#16a34a" : showAnswer && i === selected ? "#dc2626" : "rgba(255,255,255,0.14)",
+                background:
+                  showAnswer && i === current.answer
+                    ? "#16a34a"
+                    : showAnswer && i === selected
+                    ? "#dc2626"
+                    : "rgba(255,255,255,0.14)",
                 textAlign: "left",
-                cursor: "pointer",
+                cursor: showAnswer ? "default" : "pointer",
                 fontSize: 16,
+                transition: "0.2s",
               }}
             >
-              {opt}
+              {String.fromCharCode(65 + i)}. {opt}
             </button>
           ))}
 
           {gameType === "online" && (
-            <div style={{ marginTop: 18, background: "rgba(255,255,255,0.10)", borderRadius: 14, padding: 12, textAlign: "left" }}>
+            <div
+              style={{
+                marginTop: 18,
+                background: "rgba(255,255,255,0.10)",
+                borderRadius: 14,
+                padding: 12,
+                textAlign: "left",
+              }}
+            >
               <p style={{ marginTop: 0, fontWeight: 700 }}>Canlı Sıralama</p>
               {ranking.map((p, i) => (
-                <div key={p.id} style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span>#{i + 1} {p.name}</span>
-                  <span>{p.score}</span>
+                <div
+                  key={p.id}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: 6,
+                    padding: "8px 10px",
+                    borderRadius: 10,
+                    background:
+                      i === 0 && pulseLeader
+                        ? "rgba(250,204,21,0.20)"
+                        : "rgba(255,255,255,0.05)",
+                  }}
+                >
+                  <span>
+                    {getPlayerBadge(p)} #{i + 1} {p.name}
+                  </span>
+                  <span>
+                    {showAnswer ? getPlayerAnswerState(p) : `${p.score} puan`}
+                  </span>
                 </div>
               ))}
-              <p style={{ marginBottom: 0, marginTop: 8, opacity: 0.8 }}>{everyoneAnswered ? "Herkes cevapladı" : "Herkes cevaplayınca sonraki soruya geçilir"}</p>
+              <p style={{ marginBottom: 0, marginTop: 8, opacity: 0.8 }}>
+                {everyoneAnswered
+                  ? "Herkes cevapladı"
+                  : "Herkes cevaplayınca veya süre dolunca devam edilir"}
+              </p>
             </div>
           )}
 
-          {showAnswer && (gameType === "offline" || (gameType === "online" && everyoneAnswered && isHost)) && (
-            <button onClick={nextQuestion} style={{ ...buttonBase, marginTop: 16 }}>
-              {qIndex < questions.length - 1 ? "Sonraki" : "Bitir"}
-            </button>
+          {showAnswer && (
+            <div style={{ marginTop: 10, opacity: 0.9 }}>
+              Doğru cevap:{" "}
+              <b>
+                {String.fromCharCode(65 + current.answer)}.{" "}
+                {current.options[current.answer]}
+              </b>
+            </div>
           )}
+
+          {showAnswer &&
+            (gameType === "offline" ||
+              (gameType === "online" && everyoneAnswered && isHost)) && (
+              <button onClick={nextQuestion} style={{ ...buttonBase, marginTop: 16 }}>
+                {qIndex < questions.length - 1 ? "Sonraki" : "Bitir"}
+              </button>
+            )}
         </div>
       </div>
     );
@@ -570,19 +958,39 @@ export default function App() {
 
   return (
     <div style={pageStyle()}>
-      <div style={cardStyle}>
-        <h1 style={{ margin: 0, fontSize: 44, fontWeight: 800 }}>YKS Turnuva</h1>
-        <p style={{ marginTop: 10, opacity: 0.75 }}>İsmini yaz, avatarını seç, alanını ve dersini belirle, sonra yarışmaya başla.</p>
+      <div style={cardStyle(isMobile)}>
+        <h1 style={{ margin: 0, fontSize: isMobile ? 34 : 44, fontWeight: 800 }}>
+          YKS Turnuva
+        </h1>
+        <p style={{ marginTop: 10, opacity: 0.75 }}>
+          İsmini yaz, avatarını seç, dersini ve zorluğu belirle, sonra yarışmaya başla.
+        </p>
 
         <input
           placeholder="İsmini yaz"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          style={{ width: "100%", marginTop: 18, padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.25)", outline: "none", fontSize: 16, background: "rgba(255,255,255,0.92)" }}
+          style={{
+            width: "100%",
+            marginTop: 18,
+            padding: "14px 16px",
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,0.25)",
+            outline: "none",
+            fontSize: 16,
+            background: "rgba(255,255,255,0.92)",
+          }}
         />
 
         <div style={{ marginTop: 24, fontWeight: 700 }}>Profil Karakteri Seç:</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginTop: 14 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(3, 1fr)",
+            gap: 14,
+            marginTop: 14,
+          }}
+        >
           {avatars.map((item) => {
             const active = avatar === item.emoji;
             return (
@@ -591,8 +999,12 @@ export default function App() {
                 onClick={() => setAvatar(item.emoji)}
                 style={{
                   borderRadius: 18,
-                  border: active ? "2px solid rgba(255,255,255,0.95)" : "1px solid rgba(255,255,255,0.2)",
-                  background: active ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.10)",
+                  border: active
+                    ? "2px solid rgba(255,255,255,0.95)"
+                    : "1px solid rgba(255,255,255,0.2)",
+                  background: active
+                    ? "rgba(255,255,255,0.18)"
+                    : "rgba(255,255,255,0.10)",
                   color: "white",
                   padding: "18px 8px",
                   cursor: "pointer",
@@ -606,23 +1018,120 @@ export default function App() {
         </div>
 
         <div style={{ marginTop: 22, fontWeight: 700 }}>Oyun Modu Seç:</div>
-        <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 14, flexWrap: "wrap" }}>
-          <button onClick={() => setGameType("offline")} style={{ ...buttonBase, background: gameType === "offline" ? "white" : "rgba(255,255,255,0.16)", color: gameType === "offline" ? "#111827" : "white" }}>Offline</button>
-          <button onClick={() => setGameType("online")} style={{ ...buttonBase, background: gameType === "online" ? "white" : "rgba(255,255,255,0.16)", color: gameType === "online" ? "#111827" : "white" }}>Online</button>
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            justifyContent: "center",
+            marginTop: 14,
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            onClick={() => setGameType("offline")}
+            style={{
+              ...buttonBase,
+              background: gameType === "offline" ? "white" : "rgba(255,255,255,0.16)",
+              color: gameType === "offline" ? "#111827" : "white",
+            }}
+          >
+            Offline
+          </button>
+          <button
+            onClick={() => setGameType("online")}
+            style={{
+              ...buttonBase,
+              background: gameType === "online" ? "white" : "rgba(255,255,255,0.16)",
+              color: gameType === "online" ? "#111827" : "white",
+            }}
+          >
+            Online
+          </button>
         </div>
 
         <div style={{ marginTop: 22, fontWeight: 700 }}>Sınav Türü Seç:</div>
         <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 14 }}>
-          <button onClick={() => { setExam("TYT"); setLesson(""); }} style={{ ...buttonBase, background: exam === "TYT" ? "white" : "rgba(255,255,255,0.16)", color: exam === "TYT" ? "#111827" : "white" }}>TYT</button>
-          <button onClick={() => { setExam("AYT"); setLesson(""); }} style={{ ...buttonBase, background: exam === "AYT" ? "white" : "rgba(255,255,255,0.16)", color: exam === "AYT" ? "#111827" : "white" }}>AYT</button>
+          <button
+            onClick={() => {
+              setExam("TYT");
+              setLesson("");
+            }}
+            style={{
+              ...buttonBase,
+              background: exam === "TYT" ? "white" : "rgba(255,255,255,0.16)",
+              color: exam === "TYT" ? "#111827" : "white",
+            }}
+          >
+            TYT
+          </button>
+          <button
+            onClick={() => {
+              setExam("AYT");
+              setLesson("");
+            }}
+            style={{
+              ...buttonBase,
+              background: exam === "AYT" ? "white" : "rgba(255,255,255,0.16)",
+              color: exam === "AYT" ? "#111827" : "white",
+            }}
+          >
+            AYT
+          </button>
         </div>
 
         {exam && (
           <>
             <div style={{ marginTop: 22, fontWeight: 700 }}>Ders Seç:</div>
-            <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap", marginTop: 14 }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                justifyContent: "center",
+                flexWrap: "wrap",
+                marginTop: 14,
+              }}
+            >
               {lessons.map((item) => (
-                <button key={item} onClick={() => setLesson(item)} style={{ ...buttonBase, background: lesson === item ? "white" : "rgba(255,255,255,0.16)", color: lesson === item ? "#111827" : "white" }}>{item}</button>
+                <button
+                  key={item}
+                  onClick={() => setLesson(item)}
+                  style={{
+                    ...buttonBase,
+                    background: lesson === item ? "white" : "rgba(255,255,255,0.16)",
+                    color: lesson === item ? "#111827" : "white",
+                  }}
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {lesson && (
+          <>
+            <div style={{ marginTop: 22, fontWeight: 700 }}>Zorluk Seç:</div>
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                justifyContent: "center",
+                flexWrap: "wrap",
+                marginTop: 14,
+              }}
+            >
+              {["Karışık", "Kolay", "Orta", "Zor"].map((item) => (
+                <button
+                  key={item}
+                  onClick={() => setDifficulty(item)}
+                  style={{
+                    ...buttonBase,
+                    background: difficulty === item ? "white" : "rgba(255,255,255,0.16)",
+                    color: difficulty === item ? "#111827" : "white",
+                  }}
+                >
+                  {item}
+                </button>
               ))}
             </div>
           </>
@@ -634,14 +1143,23 @@ export default function App() {
               alert("İsim, sınav türü ve ders seçmelisin.");
               return;
             }
+
             if (gameType === "online") {
               setRoomError("");
               setScreen("onlineLobby");
               return;
             }
+
             startOffline();
           }}
-          style={{ ...buttonBase, marginTop: 28, padding: "12px 26px", background: "white", color: "#111827", fontSize: 16 }}
+          style={{
+            ...buttonBase,
+            marginTop: 28,
+            padding: "12px 26px",
+            background: "white",
+            color: "#111827",
+            fontSize: 16,
+          }}
         >
           Oyuna Başla
         </button>
